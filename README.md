@@ -1,14 +1,12 @@
 # Legal Agent (Agno + Ollama + FastAPI)
 
-Backend API focused on accurate legal `entities` and `clauses` extraction for downstream actions.
+Backend API focused on structure-aware legal extraction for downstream workflows.
 
 ## What it does
 
-- Extracts entities and clauses into structured JSON.
-- Supports:
-  - Single-document extraction
-  - Mixed bundle extraction (multiple documents in one request)
-- Uses local Ollama models through Agno typed input/output patterns.
+- Extracts parties, shareholders, clauses, exhibits, relationships, and financial terms into structured JSON.
+- Supports single-document text and uploaded-file extraction.
+- Uses Docling for parsing and a hybrid semantic extraction pipeline on local Ollama models.
 
 ## Quick start
 
@@ -38,26 +36,33 @@ python -m app.main
 ## Endpoints
 
 - `GET /health`
-- `POST /v1/extract` (single text document)
-- `POST /v1/extract-upload` (single uploaded file)
-- `POST /v1/extract-bundle` (multiple text documents)
-- `POST /v1/extract-bundle-upload` (multiple uploaded files)
+- `POST /extract` (single text document)
+- `POST /extract-upload` (single uploaded file)
 
-The upload parser is fixed to `pypdf` for stable local performance and no external OCR downloads.
+Legacy aliases still point to the same pipeline:
+- `POST /v2/extract`
+- `POST /v2/extract-upload`
 
 ## Model defaults
 
-- Model: `qwen3:8b-q4_K_M`
+- Model: `qwen2.5:7b`
 
 Override with env vars in `.env`.
 
 ## Notes
 
 - This service is extraction-focused, not legal advice.
-- For very large documents, input is truncated to `LEGAL_AGENT_MAX_TEXT_CHARS`.
-- Long documents are processed in chunked extraction mode and merged into one final output across entities, clauses, shareholdings, financial terms, and relationships.
-- `.txt`, `.md`, and `.json` uploads are supported directly.
-- `.pdf` and `.docx` are supported only if optional parsers are installed:
-  - PDF: `pypdf`
-  - DOCX: `python-docx`
-"# agnoLegalAgent" 
+- Long documents are processed with Docling-based section-aware chunking.
+- The pipeline uses heuristics on every chunk and selectively applies the LLM to the most valuable sections.
+- `.txt`, `.md`, `.pdf`, and `.docx` uploads are supported through the current parser stack.
+
+## Extraction Pipeline
+
+- Docling-based document parsing with section-aware chunking and table preservation
+- Hybrid extraction with heuristics on all chunks plus selective LLM passes
+- Deterministic merge plus optional financial, exhibit, taxonomy, and relationship refinement
+- Optional LangSmith tracing through:
+  - `LEGAL_AGENT_LANGSMITH_ENABLED`
+  - `LEGAL_AGENT_LANGSMITH_API_KEY`
+  - `LEGAL_AGENT_LANGSMITH_API_URL`
+  - `LEGAL_AGENT_LANGSMITH_PROJECT`

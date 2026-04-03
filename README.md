@@ -4,7 +4,7 @@ Backend API focused on structure-aware legal extraction for downstream workflows
 
 ## What it does
 
-- Extracts parties, shareholders, clauses, exhibits, relationships, and financial terms into structured JSON.
+- Extracts parties, shareholders, clauses, exhibits, relationships, financial terms, cross-references, and graph metadata into structured JSON.
 - Supports single-document text and uploaded-file extraction.
 - Uses Docling for parsing and a hybrid semantic extraction pipeline on local Ollama models.
 
@@ -59,10 +59,32 @@ Override with env vars in `.env`.
 ## Extraction Pipeline
 
 - Docling-based document parsing with section-aware chunking and table preservation
+- Document classifier with playbook routing
+- Playbook-guided extraction for supported contract families
 - Hybrid extraction with heuristics on all chunks plus selective LLM passes
 - Deterministic merge plus optional financial, exhibit, taxonomy, and relationship refinement
+- Lightweight cross-reference and entity graph generation
 - Optional LangSmith tracing through:
   - `LEGAL_AGENT_LANGSMITH_ENABLED`
   - `LEGAL_AGENT_LANGSMITH_API_KEY`
   - `LEGAL_AGENT_LANGSMITH_API_URL`
   - `LEGAL_AGENT_LANGSMITH_PROJECT`
+
+## Playbooks
+
+Playbooks live in [playbooks](C:\projects\legal_agent\playbooks) and define:
+- expected fields
+- clause taxonomy
+- risk rules
+- cross-reference patterns
+- priority terms for chunk routing
+
+Current playbooks include:
+- Shareholders Agreement
+- NDA
+- Lease Agreement
+- Employment Agreement
+- Service Agreement
+- Loan Agreement
+- Policy
+- Default fallback

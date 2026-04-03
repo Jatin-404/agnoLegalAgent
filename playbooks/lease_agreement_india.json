@@ -1,0 +1,44 @@
+{
+  "playbook_id": "lease_agreement_india",
+  "playbook_version": "1.0",
+  "contract_type": "Lease Agreement",
+  "jurisdiction": "India",
+  "aliases": ["lease agreement", "rent agreement", "tenancy agreement"],
+  "fields": [
+    "parties",
+    "financial_terms",
+    "term",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "financial",
+    "penalties",
+    "exit",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "requires_financial_terms",
+      "message": "Lease payments or monetary terms were not extracted."
+    },
+    {
+      "type": "missing_field",
+      "field": "term",
+      "message": "Lease term was not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*",
+    "(?i)schedule\\s+[A-Z0-9]+"
+  ],
+  "priority_terms": [
+    "rent",
+    "lease term",
+    "security deposit",
+    "premises",
+    "maintenance"
+  ],
+  "graph_entity_types": ["party", "property", "clause"]
+}

@@ -1,0 +1,35 @@
+{
+  "playbook_id": "policy_global",
+  "playbook_version": "1.0",
+  "contract_type": "Policy",
+  "jurisdiction": "Global",
+  "aliases": ["policy", "code of conduct", "privacy policy"],
+  "fields": [
+    "parties",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "penalties",
+    "financial",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "missing_field",
+      "field": "parties",
+      "message": "Policy owner or governed organization was not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)section\\s+\\d+(?:\\.\\d+)*"
+  ],
+  "priority_terms": [
+    "policy",
+    "scope",
+    "applicability",
+    "compliance",
+    "violations"
+  ],
+  "graph_entity_types": ["party", "clause"]
+}

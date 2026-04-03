@@ -1,0 +1,46 @@
+{
+  "playbook_id": "employment_agreement_india",
+  "playbook_version": "1.0",
+  "contract_type": "Employment Agreement",
+  "jurisdiction": "India",
+  "aliases": ["employment agreement", "employment contract", "appointment letter"],
+  "fields": [
+    "parties",
+    "financial_terms",
+    "term",
+    "confidentiality",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "financial",
+    "non_compete",
+    "penalties",
+    "exit",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "missing_field",
+      "field": "financial_terms",
+      "message": "Compensation or salary terms were not identified."
+    },
+    {
+      "type": "missing_field",
+      "field": "term",
+      "message": "Employment duration or notice structure was not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*"
+  ],
+  "priority_terms": [
+    "salary",
+    "compensation",
+    "termination",
+    "notice period",
+    "confidentiality"
+  ],
+  "graph_entity_types": ["party", "clause"]
+}

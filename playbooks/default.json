@@ -1,0 +1,43 @@
+{
+  "playbook_id": "default",
+  "playbook_version": "1.0",
+  "contract_type": "Legal Document",
+  "jurisdiction": "Global",
+  "aliases": ["agreement", "contract", "legal document", "other"],
+  "fields": ["parties", "governing_law", "term"],
+  "clause_taxonomy": [
+    "shareholding",
+    "governance",
+    "transfer_restrictions",
+    "exit",
+    "non_compete",
+    "tag_along",
+    "drag_along",
+    "bad_leaver",
+    "penalties",
+    "financial",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "missing_field",
+      "field": "parties",
+      "message": "Primary parties were not extracted; human review recommended."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*",
+    "(?i)exhibit\\s+[A-Z0-9]+",
+    "(?i)schedule\\s+[A-Z0-9]+"
+  ],
+  "priority_terms": [
+    "definitions",
+    "governing law",
+    "jurisdiction",
+    "termination",
+    "payment"
+  ],
+  "graph_entity_types": ["party", "clause", "exhibit"]
+}

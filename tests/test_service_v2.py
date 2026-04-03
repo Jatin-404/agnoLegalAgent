@@ -55,6 +55,7 @@ class ServiceV2Tests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
+            patch.object(settings, "enable_classifier_agent", False),
             patch.object(settings, "v2_enable_section_agent", False),
             patch.object(settings, "v2_enable_financial_agent", False),
             patch.object(settings, "v2_enable_exhibit_agent", False),
@@ -68,6 +69,9 @@ class ServiceV2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(response.extraction.parties), 2)
         self.assertEqual(len(response.extraction.shareholders), 2)
         self.assertTrue(response.extraction.short_summary)
+        self.assertEqual(response.extraction.playbook_id, "shareholders_agreement_india")
+        self.assertGreater(response.extraction.classifier_confidence, 0.8)
+        self.assertIn("parties", response.extraction.playbook_fields_extracted)
 
     async def test_extract_section_merges_model_output_with_heuristics(self) -> None:
         chunk = Document(
@@ -91,6 +95,7 @@ class ServiceV2Tests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
+            patch.object(settings, "enable_classifier_agent", False),
             patch.object(settings, "v2_enable_section_agent", True),
             patch("app.core.service_v2.get_v2_section_agent", return_value=fake_agent),
         ):
@@ -111,6 +116,7 @@ class ServiceV2Tests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
+            patch.object(settings, "enable_classifier_agent", False),
             patch.object(settings, "v2_enable_section_agent", True),
             patch.object(settings, "v2_max_model_chunks", 1),
             patch("app.core.service_v2.get_v2_section_agent", return_value=fake_agent),
@@ -129,6 +135,7 @@ class ServiceV2Tests(unittest.IsolatedAsyncioTestCase):
         slow_agent = _SlowAgent(delay_seconds=1.2)
 
         with (
+            patch.object(settings, "enable_classifier_agent", False),
             patch.object(settings, "v2_enable_section_agent", True),
             patch.object(settings, "v2_agent_call_timeout_seconds", 1),
             patch.object(settings, "structured_retries", 1),

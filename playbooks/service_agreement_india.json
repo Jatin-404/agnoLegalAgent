@@ -1,0 +1,45 @@
+{
+  "playbook_id": "service_agreement_india",
+  "playbook_version": "1.0",
+  "contract_type": "Service Agreement",
+  "jurisdiction": "India",
+  "aliases": ["service agreement", "master services agreement", "services contract"],
+  "fields": [
+    "parties",
+    "financial_terms",
+    "term",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "financial",
+    "penalties",
+    "exit",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "requires_financial_terms",
+      "message": "Service fees or payment terms were not extracted."
+    },
+    {
+      "type": "missing_field",
+      "field": "governing_law",
+      "message": "Governing law or dispute mechanism was not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*",
+    "(?i)statement of work",
+    "(?i)exhibit\\s+[A-Z0-9]+"
+  ],
+  "priority_terms": [
+    "services",
+    "fees",
+    "payment",
+    "statement of work",
+    "service levels"
+  ],
+  "graph_entity_types": ["party", "clause", "exhibit"]
+}

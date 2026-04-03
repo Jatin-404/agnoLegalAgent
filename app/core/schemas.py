@@ -128,18 +128,77 @@ class ClauseTaxonomyResult(BaseModel):
     clause_type: ClauseTaxonomy
 
 
+class DocumentClassification(BaseModel):
+    document_type: str
+    normalized_type: str
+    jurisdiction: str = "India"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    matched_playbook_id: Optional[str] = None
+    matched_keywords: List[str] = Field(default_factory=list)
+    reasoning: Optional[str] = None
+
+
+class PlaybookDefinition(BaseModel):
+    playbook_id: str
+    playbook_version: str = "1.0"
+    contract_type: str
+    jurisdiction: str = "Global"
+    aliases: List[str] = Field(default_factory=list)
+    fields: List[str] = Field(default_factory=list)
+    clause_taxonomy: List[str] = Field(default_factory=list)
+    risk_rules: List[Dict[str, Any]] = Field(default_factory=list)
+    cross_ref_patterns: List[str] = Field(default_factory=list)
+    priority_terms: List[str] = Field(default_factory=list)
+    graph_entity_types: List[str] = Field(default_factory=list)
+
+
+class CrossReference(BaseModel):
+    source_label: str
+    target_label: str
+    reference_text: str
+    reference_type: str = "clause_reference"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class GraphNode(BaseModel):
+    node_id: str
+    node_type: str
+    label: str
+
+
+class GraphEdge(BaseModel):
+    source_id: str
+    target_id: str
+    relation: str
+    evidence: Optional[str] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 class LegalExtraction(BaseModel):
     contract_type: str
+    document_type: Optional[str] = None
+    jurisdiction: str = "India"
+    playbook_id: Optional[str] = None
+    playbook_version: Optional[str] = None
+    classifier_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    playbook_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    playbook_fields_expected: List[str] = Field(default_factory=list)
+    playbook_fields_extracted: List[str] = Field(default_factory=list)
+    playbook_fields_missing: List[str] = Field(default_factory=list)
     parties: List[FlexibleEntity] = Field(default_factory=list)
     shareholders: List[Shareholder] = Field(default_factory=list)
     financial_terms: List[FinancialTerm] = Field(default_factory=list)
     exhibits: List[Exhibit] = Field(default_factory=list)
     key_clauses: List[Clause] = Field(default_factory=list)
     relationships: List[SemanticRelationship] = Field(default_factory=list)
+    cross_references: List[CrossReference] = Field(default_factory=list)
+    graph_nodes: List[GraphNode] = Field(default_factory=list)
+    graph_edges: List[GraphEdge] = Field(default_factory=list)
     red_flags: List[str] = Field(default_factory=list)
     drafting_style_detected: str = "unknown"
     completeness_score: int = Field(..., ge=0, le=100)
     short_summary: str = ""
+    needs_human_review: bool = False
 
 
 class SingleExtractionResponse(BaseModel):

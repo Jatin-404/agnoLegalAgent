@@ -19,6 +19,7 @@ from app.core.agents import (
     get_v2_section_agent,
     get_v2_taxonomy_agent,
 )
+from app.core.classifier import classify_document, get_playbook_for_classification
 from app.core.config import settings
 from app.core.document_loader import chunk_legal_document
 from app.core.extraction_utils import (
@@ -32,17 +33,21 @@ from app.core.extraction_utils import (
     _normalize_quotes,
     _strip_markdown_formatting,
 )
+from app.core.graph_utils import build_document_graph, extract_cross_references
 from app.core.observability import legal_tracing_context
+from app.core.playbooks import calculate_playbook_coverage, compact_playbook_for_prompt, evaluate_playbook_risks
 from app.core.schemas import (
     Clause,
     ClauseTaxonomy,
     ClauseTaxonomyResult,
+    DocumentClassification,
     Exhibit,
     ExhibitsExtraction,
     FinancialTermV2,
     FinancialTermsExtraction,
     FlexibleEntity,
     LegalExtractionV2,
+    PlaybookDefinition,
     RelationshipsExtraction,
     SectionExtractionV2,
     SemanticRelationship,
@@ -336,6 +341,75 @@ def _ensure_v2_short_summary(extraction: LegalExtractionV2, full_text: str) -> s
     return _clean_snippet(_first_non_empty_line(_strip_markdown_formatting(full_text)) or extraction.contract_type, 260)
 
 
+def _playbook_prompt_payload(classification: DocumentClassification, playbook: PlaybookDefinition) -> str:
+    payload = {
+        "classification": classification.model_dump(),
+        "playbook": compact_playbook_for_prompt(playbook),
+    }
+    return json.dumps(payload, ensure_ascii=True, indent=2)
+
+
+def _default_routing_context(contract_type_hint: str, jurisdiction_hint: str = "India") -> tuple[DocumentClassification, PlaybookDefinition]:
+    classification = DocumentClassification(
+        document_type=contract_type_hint,
+        normalized_type=contract_type_hint,
+        jurisdiction=jurisdiction_hint,
+        confidence=0.75,
+        matched_playbook_id=None,
+        matched_keywords=[],
+        reasoning="default_test_context",
+    )
+    playbook = get_playbook_for_classification(classification)
+    classification.matched_playbook_id = playbook.playbook_id
+    return classification, playbook
+
+
+def _apply_playbook_postprocessing(
+    *,
+    extraction: LegalExtractionV2,
+    classification: DocumentClassification,
+    playbook: PlaybookDefinition,
+    full_text: str,
+    truncated: bool,
+) -> LegalExtractionV2:
+    extraction.document_type = extraction.contract_type or classification.document_type
+    extraction.contract_type = extraction.contract_type or classification.document_type
+    extraction.jurisdiction = classification.jurisdiction or playbook.jurisdiction
+    extraction.playbook_id = playbook.playbook_id
+    extraction.playbook_version = playbook.playbook_version
+    extraction.classifier_confidence = classification.confidence
+
+    extracted_fields, missing_fields = calculate_playbook_coverage(extraction, playbook)
+    extraction.playbook_fields_expected = playbook.fields
+    extraction.playbook_fields_extracted = extracted_fields
+    extraction.playbook_fields_missing = missing_fields
+
+    coverage_ratio = (len(extracted_fields) / len(playbook.fields)) if playbook.fields else 1.0
+    extraction.playbook_confidence = round(min(1.0, (classification.confidence * 0.55) + (coverage_ratio * 0.45)), 4)
+
+    playbook_risks = evaluate_playbook_risks(extraction, playbook)
+    extraction.red_flags = list(dict.fromkeys([*extraction.red_flags, *playbook_risks]))
+
+    extraction.cross_references = extract_cross_references(
+        full_text=full_text,
+        clauses=extraction.key_clauses,
+        exhibits=extraction.exhibits,
+        playbook=playbook,
+    )
+    extraction.graph_nodes, extraction.graph_edges = build_document_graph(extraction)
+
+    weighted_completeness = int((extraction.completeness_score * 0.7) + (coverage_ratio * 100 * 0.3))
+    extraction.completeness_score = max(0, min(100, weighted_completeness))
+    extraction.needs_human_review = bool(
+        truncated
+        or extraction.classifier_confidence < 0.58
+        or extraction.playbook_confidence < 0.6
+        or len(extraction.red_flags) > 0
+        or len(extraction.playbook_fields_missing) > max(1, len(playbook.fields) // 2)
+    )
+    return extraction
+
+
 def _heuristic_section_extraction(*, chunk: Document, contract_type_hint: str) -> SectionExtractionV2:
     parties = _to_v2_parties(chunk.content)
     shareholders = _to_v2_shareholders(chunk.content, parties)
@@ -403,7 +477,7 @@ def _merge_relationship_collections(
     )
 
 
-def _chunk_llm_priority(chunk: Document) -> tuple[int, int]:
+def _chunk_llm_priority(chunk: Document, playbook: PlaybookDefinition) -> tuple[int, int]:
     meta = dict(chunk.meta_data or {})
     text = chunk.content.lower()
     score = 0
@@ -431,6 +505,13 @@ def _chunk_llm_priority(chunk: Document) -> tuple[int, int]:
         )
     )
     score += min(6, keyword_hits)
+    score += sum(2 for term in playbook.priority_terms if term.lower() in text)
+    for pattern in playbook.cross_ref_patterns:
+        try:
+            if re.search(pattern, text):
+                score += 2
+        except re.error:
+            continue
     score += min(3, max(0, len(chunk.content) // 2500))
     return score, -int(meta.get("chunk_id") or 0)
 
@@ -457,13 +538,18 @@ async def _extract_section(
     *,
     chunk: Document,
     contract_type_hint: str,
+    classification: DocumentClassification | None = None,
+    playbook: PlaybookDefinition | None = None,
     use_model: bool = True,
 ) -> SectionExtractionV2:
+    classification = classification or _default_routing_context(contract_type_hint)[0]
+    playbook = playbook or get_playbook_for_classification(classification)
     baseline = _heuristic_section_extraction(chunk=chunk, contract_type_hint=contract_type_hint)
     if not use_model or not settings.v2_enable_section_agent:
         return baseline
 
     prompt = (
+        f"Document routing context:\n{_playbook_prompt_payload(classification, playbook)}\n\n"
         f"Contract type hint: {contract_type_hint}\n"
         f"Section title: {(chunk.meta_data or {}).get('section_title', 'Unknown')}\n"
         f"Chunk type: {(chunk.meta_data or {}).get('chunk_type', 'text')}\n\n"
@@ -481,7 +567,11 @@ async def _extract_section(
 
 
 @traceable(run_type="chain", name="legal_v2_financial_pass")
-async def _extract_financials(texts: list[str]) -> list[FinancialTermV2]:
+async def _extract_financials(
+    texts: list[str],
+    classification: DocumentClassification,
+    playbook: PlaybookDefinition,
+) -> list[FinancialTermV2]:
     baseline = _dedupe_by_key(
         [item for text in texts for item in _to_v2_financial_terms(text)],
         lambda item: ((item.description or "").lower(), item.amount, item.percentage, (item.trigger_condition or "").lower()),
@@ -496,7 +586,10 @@ async def _extract_financials(texts: list[str]) -> list[FinancialTermV2]:
             try:
                 extraction = await _run_agent_with_retry(
                     agent=get_v2_financial_agent(),
-                    payload=text,
+                    payload=(
+                        f"Document routing context:\n{_playbook_prompt_payload(classification, playbook)}\n\n"
+                        f"Text:\n{text}"
+                    ),
                     schema=FinancialTermsExtraction,
                 )
                 return extraction.items
@@ -509,7 +602,11 @@ async def _extract_financials(texts: list[str]) -> list[FinancialTermV2]:
 
 
 @traceable(run_type="chain", name="legal_v2_exhibit_pass")
-async def _extract_exhibits(texts: list[str]) -> list[Exhibit]:
+async def _extract_exhibits(
+    texts: list[str],
+    classification: DocumentClassification,
+    playbook: PlaybookDefinition,
+) -> list[Exhibit]:
     baseline = _dedupe_by_key(
         [item for text in texts for item in _extract_exhibits_heuristically(text)],
         lambda item: ((item.exhibit_id or "").lower(), (item.title or "").lower()),
@@ -524,7 +621,10 @@ async def _extract_exhibits(texts: list[str]) -> list[Exhibit]:
             try:
                 extraction = await _run_agent_with_retry(
                     agent=get_v2_exhibit_agent(),
-                    payload=text,
+                    payload=(
+                        f"Document routing context:\n{_playbook_prompt_payload(classification, playbook)}\n\n"
+                        f"Text:\n{text}"
+                    ),
                     schema=ExhibitsExtraction,
                 )
                 return extraction.items
@@ -628,6 +728,8 @@ def _deterministic_merge_v2(
 async def _merge_extractions(
     *,
     contract_type: str,
+    classification: DocumentClassification,
+    playbook: PlaybookDefinition,
     section_results: list[SectionExtractionV2],
     financial_terms: list[FinancialTermV2],
     exhibits: list[Exhibit],
@@ -646,6 +748,10 @@ async def _merge_extractions(
     payload = {
         "contract_type_hint": contract_type,
         "truncated": truncated,
+        "routing_context": {
+            "classification": classification.model_dump(),
+            "playbook": compact_playbook_for_prompt(playbook),
+        },
         "section_results": [result.model_dump() for result in section_results],
         "financial_terms": [item.model_dump() for item in financial_terms],
         "exhibits": [item.model_dump() for item in exhibits],
@@ -676,7 +782,11 @@ async def _merge_extractions(
 
 
 @traceable(run_type="chain", name="legal_v2_relationship_inference")
-async def _infer_relationships(merged: LegalExtractionV2) -> list[SemanticRelationship]:
+async def _infer_relationships(
+    merged: LegalExtractionV2,
+    classification: DocumentClassification,
+    playbook: PlaybookDefinition,
+) -> list[SemanticRelationship]:
     baseline = _infer_relationships_heuristically(
         merged.parties,
         merged.shareholders,
@@ -689,7 +799,10 @@ async def _infer_relationships(merged: LegalExtractionV2) -> list[SemanticRelati
     try:
         extraction = await _run_agent_with_retry(
             agent=get_v2_relationship_agent(),
-            payload=merged.model_dump_json(indent=2),
+            payload=(
+                f"Document routing context:\n{_playbook_prompt_payload(classification, playbook)}\n\n"
+                f"Merged extraction:\n{merged.model_dump_json(indent=2)}"
+            ),
             schema=RelationshipsExtraction,
         )
         relationships = extraction.items
@@ -707,13 +820,23 @@ def _build_specialized_pass_inputs(chunks: list[Document]) -> list[str]:
     return [chunk.content for chunk in chunks]
 
 
-async def _extract_sections_in_parallel(chunks: list[Document], contract_type: str) -> list[SectionExtractionV2]:
+async def _extract_sections_in_parallel(
+    chunks: list[Document],
+    contract_type: str,
+    classification: DocumentClassification | None = None,
+    playbook: PlaybookDefinition | None = None,
+) -> list[SectionExtractionV2]:
+    classification, playbook = (
+        (classification, playbook)
+        if classification is not None and playbook is not None
+        else _default_routing_context(contract_type)
+    )
     semaphore = asyncio.Semaphore(max(1, settings.v2_chunk_concurrency))
     llm_indexes: set[int] = set()
     if settings.v2_enable_section_agent and settings.v2_max_model_chunks > 0:
         scored_indexes = sorted(
             range(len(chunks)),
-            key=lambda index: _chunk_llm_priority(chunks[index]),
+            key=lambda index: _chunk_llm_priority(chunks[index], playbook),
             reverse=True,
         )
         llm_indexes = set(scored_indexes[: min(settings.v2_max_model_chunks, len(chunks))])
@@ -723,6 +846,8 @@ async def _extract_sections_in_parallel(chunks: list[Document], contract_type: s
             return await _extract_section(
                 chunk=chunk,
                 contract_type_hint=contract_type,
+                classification=classification,
+                playbook=playbook,
                 use_model=index in llm_indexes,
             )
 
@@ -736,7 +861,9 @@ async def run_single_extraction_v2(
     start = perf_counter()
     clean_text = request.document_text.strip()
     full_metadata = dict(request.document_metadata or {})
-    contract_type = _infer_contract_type(clean_text)
+    classification = await classify_document(clean_text, request.jurisdiction_hint or "India")
+    playbook = get_playbook_for_classification(classification)
+    contract_type = classification.document_type or _infer_contract_type(clean_text)
     source_document = Document(
         name=request.document_name,
         content=clean_text,
@@ -749,6 +876,8 @@ async def run_single_extraction_v2(
             "document_name": request.document_name,
             "parser_mode": parser_mode,
             "contract_type_hint": contract_type,
+            "playbook_id": playbook.playbook_id,
+            "classifier_confidence": classification.confidence,
         },
     ):
         chunks, truncated = chunk_legal_document(
@@ -761,12 +890,14 @@ async def run_single_extraction_v2(
 
         full_text_inputs = _build_specialized_pass_inputs(chunks)
         section_results, financial_terms, exhibits = await asyncio.gather(
-            _extract_sections_in_parallel(chunks, contract_type),
-            _extract_financials(full_text_inputs),
-            _extract_exhibits(full_text_inputs),
+            _extract_sections_in_parallel(chunks, contract_type, classification, playbook),
+            _extract_financials(full_text_inputs, classification, playbook),
+            _extract_exhibits(full_text_inputs, classification, playbook),
         )
         merged = await _merge_extractions(
             contract_type=contract_type,
+            classification=classification,
+            playbook=playbook,
             section_results=section_results,
             financial_terms=financial_terms,
             exhibits=exhibits,
@@ -774,7 +905,7 @@ async def run_single_extraction_v2(
             truncated=truncated,
         )
         merged.key_clauses = await _refine_clause_taxonomy(merged.key_clauses)
-        merged.relationships = await _infer_relationships(merged)
+        merged.relationships = await _infer_relationships(merged, classification, playbook)
         merged.completeness_score = _calculate_completeness(
             text=clean_text,
             parties=merged.parties,
@@ -783,6 +914,13 @@ async def run_single_extraction_v2(
             exhibits=merged.exhibits,
             clauses=merged.key_clauses,
             relationships=merged.relationships,
+        )
+        merged = _apply_playbook_postprocessing(
+            extraction=merged,
+            classification=classification,
+            playbook=playbook,
+            full_text=clean_text,
+            truncated=truncated,
         )
         merged.short_summary = _ensure_v2_short_summary(merged, clean_text)
 

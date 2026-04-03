@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     structured_retries: int = 1
     use_native_output_schema: bool = False
     extraction_num_predict: int = 360
+    enable_classifier_agent: bool = True
+    classifier_model_id: str = "qwen2.5:7b"
+    classifier_num_predict: int = 96
+    classifier_agent_call_timeout_seconds: int = 12
+    classifier_confidence_threshold: float = 0.84
     v2_chunk_concurrency: int = 3
     v2_chunk_size: int = 6500
     v2_max_chunks: int = 12

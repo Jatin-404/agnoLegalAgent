@@ -1,0 +1,43 @@
+{
+  "playbook_id": "nda_india",
+  "playbook_version": "1.0",
+  "contract_type": "NDA",
+  "jurisdiction": "India",
+  "aliases": ["nda", "non disclosure agreement", "non-disclosure agreement", "confidentiality agreement"],
+  "fields": [
+    "parties",
+    "confidentiality",
+    "term",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "financial",
+    "penalties",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "missing_field",
+      "field": "confidentiality",
+      "message": "Confidentiality obligations were not clearly extracted."
+    },
+    {
+      "type": "missing_field",
+      "field": "governing_law",
+      "message": "Governing law or dispute terms were not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*"
+  ],
+  "priority_terms": [
+    "confidential information",
+    "non disclosure",
+    "permitted disclosure",
+    "term",
+    "injunctive relief"
+  ],
+  "graph_entity_types": ["party", "clause"]
+}

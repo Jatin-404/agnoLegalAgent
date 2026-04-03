@@ -5,6 +5,7 @@ from agno.models.ollama import Ollama
 
 from app.core.config import settings
 from app.core.schemas import (
+    DocumentClassification,
     ClauseTaxonomyResult,
     ExhibitsExtraction,
     FinancialTermsExtraction,
@@ -22,6 +23,31 @@ Output rules:
 - If a field is unknown, use null, [] or "" as appropriate instead of inventing facts.
 """
 
+CLASSIFIER_INSTRUCTIONS = """\
+You are a legal document classifier.
+
+Classify the document into the best-fit legal document family from the provided candidates.
+Use the actual legal purpose, structure, and obligations in the text rather than just one keyword.
+
+Rules:
+1. Choose the closest supported document family from the provided candidates.
+2. Return a confidence score between 0 and 1.
+3. Return the likely jurisdiction when it is explicit; otherwise keep the provided jurisdiction hint.
+4. Keep matched keywords short and factual.
+5. Return JSON only.
+
+Return JSON:
+{
+  "document_type": "string",
+  "normalized_type": "string",
+  "jurisdiction": "string",
+  "confidence": 0.0,
+  "matched_playbook_id": null,
+  "matched_keywords": [],
+  "reasoning": null
+}
+"""
+
 SECTION_EXTRACTION_INSTRUCTIONS = """\
 You are an expert legal section analyst.
 
@@ -35,9 +61,10 @@ Analyze only the provided document section and extract:
 Rules:
 1. Do not assume any specific contract template or clause inventory.
 2. Use the actual text, tables, and headings present in the section.
-3. For key_clauses, classify clause_type using the fixed legal taxonomy only.
-4. If a fact is not present in the current section, omit it instead of speculating.
-5. short_summary must never be empty.
+3. If a playbook is provided, follow its expected fields, risk cues, and clause taxonomy guidance.
+4. For key_clauses, classify clause_type using the fixed legal taxonomy only.
+5. If a fact is not present in the current section, omit it instead of speculating.
+6. short_summary must never be empty.
 
 Return JSON:
 {
@@ -64,6 +91,7 @@ For each item:
 - state when it applies,
 - link it to named entities when possible,
 - link it to a clause or exhibit when the text makes that clear.
+- If a playbook is provided, prefer the playbook's listed monetary and trigger patterns.
 
 Return JSON:
 {
@@ -77,6 +105,7 @@ You are a legal exhibit and annexure extraction specialist.
 Detect every exhibit, annexure, schedule, appendix, attachment, or similarly labeled section.
 Extract its identifier, title, summary, key content, and any linked financial terms.
 If no exhibit is present, return an empty list.
+- If a playbook is provided, use its cross-reference patterns to help spot schedules and annexures.
 
 Return JSON:
 {
@@ -97,6 +126,7 @@ Given a merged legal extraction, infer the important business and legal relation
 - other conditional business/legal relationships.
 
 Only infer relationships that are strongly grounded in the provided extraction.
+- If a playbook is provided, prioritize the playbook's control, payment, and trigger relationships.
 
 Return JSON:
 {
@@ -138,9 +168,10 @@ Tasks:
 3. Deduplicate entities, shareholders, and clauses.
 4. Preserve conditional logic across sections and exhibits.
 5. Use the fixed clause taxonomy only.
-6. Set completeness_score based on whether key legal/business dimensions are covered.
-7. short_summary must never be empty.
-8. Keep the output concise, structured, and operationally useful.
+6. If a playbook is provided, check whether expected fields are covered and preserve risk-relevant items.
+7. Set completeness_score based on whether key legal/business dimensions are covered.
+8. short_summary must never be empty.
+9. Keep the output concise, structured, and operationally useful.
 
 Return JSON:
 {
@@ -180,6 +211,17 @@ def _build_ollama_agent(*, name: str, model_id: str, instructions: str, output_s
     if settings.use_native_output_schema:
         agent_kwargs["output_schema"] = output_schema
     return Agent(**agent_kwargs)
+
+
+@lru_cache
+def get_document_classifier_agent() -> Agent:
+    return _build_ollama_agent(
+        name="Legal Document Classifier Agent",
+        model_id=settings.classifier_model_id,
+        instructions=CLASSIFIER_INSTRUCTIONS,
+        output_schema=DocumentClassification,
+        num_predict=settings.classifier_num_predict,
+    )
 
 
 @lru_cache

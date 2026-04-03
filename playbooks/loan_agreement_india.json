@@ -1,0 +1,44 @@
+{
+  "playbook_id": "loan_agreement_india",
+  "playbook_version": "1.0",
+  "contract_type": "Loan Agreement",
+  "jurisdiction": "India",
+  "aliases": ["loan agreement", "facility agreement", "credit agreement"],
+  "fields": [
+    "parties",
+    "financial_terms",
+    "term",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "financial",
+    "penalties",
+    "exit",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "requires_financial_terms",
+      "message": "Principal, interest, or repayment amounts were not clearly extracted."
+    },
+    {
+      "type": "missing_field",
+      "field": "term",
+      "message": "Repayment or maturity term was not identified."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*",
+    "(?i)schedule\\s+[A-Z0-9]+"
+  ],
+  "priority_terms": [
+    "principal",
+    "interest",
+    "repayment",
+    "default",
+    "security"
+  ],
+  "graph_entity_types": ["party", "clause", "exhibit"]
+}

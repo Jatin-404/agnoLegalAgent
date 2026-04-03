@@ -1,0 +1,63 @@
+{
+  "playbook_id": "shareholders_agreement_india",
+  "playbook_version": "1.0",
+  "contract_type": "Shareholders Agreement",
+  "jurisdiction": "India",
+  "aliases": ["shareholders agreement", "shareholder agreement", "sha"],
+  "fields": [
+    "parties",
+    "shareholders",
+    "governance",
+    "share_transfer",
+    "financial_terms",
+    "governing_law"
+  ],
+  "clause_taxonomy": [
+    "shareholding",
+    "governance",
+    "transfer_restrictions",
+    "exit",
+    "non_compete",
+    "tag_along",
+    "drag_along",
+    "bad_leaver",
+    "penalties",
+    "financial",
+    "disputes_governing_law",
+    "other"
+  ],
+  "risk_rules": [
+    {
+      "type": "missing_field",
+      "field": "shareholders",
+      "message": "Shareholder information is missing from the extraction."
+    },
+    {
+      "type": "missing_clause_type",
+      "clause_type": "shareholding",
+      "message": "No shareholding clause was identified."
+    },
+    {
+      "type": "shareholder_concentration",
+      "threshold": 75,
+      "message": "A shareholder appears to hold more than 75% of equity; review concentration risk."
+    }
+  ],
+  "cross_ref_patterns": [
+    "(?i)clause\\s+\\d+(?:\\.\\d+)*",
+    "(?i)section\\s+\\d+(?:\\.\\d+)*",
+    "(?i)exhibit\\s+[A-Z0-9]+",
+    "(?i)schedule\\s+[A-Z0-9]+"
+  ],
+  "priority_terms": [
+    "shareholder",
+    "equity shares",
+    "board",
+    "director",
+    "tag along",
+    "drag along",
+    "bad leaver",
+    "governing law"
+  ],
+  "graph_entity_types": ["party", "shareholder", "clause", "exhibit"]
+}
